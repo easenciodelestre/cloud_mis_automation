@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Cloud MIS - Operator Portal</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+  <style>
+    .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+    .custom-scrollbar::-webkit-scrollbar-track { background: #1f2937; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 4px; }
+  </style>
+</head>
+<body class="bg-gray-900 text-gray-100 min-h-screen font-sans antialiased">
+
+  <header class="bg-gray-800 border-b border-gray-700 shadow-lg px-6 py-4 flex justify-between items-center">
+    <div class="flex items-center space-x-3">
+      <i class="fa-solid fa-cloud text-blue-500 text-2xl"></i>
+      <h1 class="text-xl font-bold tracking-wider">CLOUD MIS <span class="text-sm font-normal text-gray-400">| Operator Portal v2.0</span></h1>
+    </div>
+    <div class="text-sm text-gray-400">
+      <i class="fa-solid fa-user-shield mr-2"></i> <?= userEmail ?>
+    </div>
+  </header>
+
+  <main class="max-w-7xl mx-auto p-6 grid grid-cols-1 lg:grid-cols-2 gap-8 mt-6">
+    
+    <section class="bg-gray-800 rounded-xl p-6 shadow-xl border border-gray-700 max-h-[750px] overflow-y-auto custom-scrollbar">
+      <h2 class="text-xl font-semibold mb-2 border-b border-gray-700 pb-2 sticky top-0 bg-gray-800 z-10"><i class="fa-solid fa-link text-blue-400 mr-2"></i>1. Panel de Exportación (T-1)</h2>
+      <p class="text-sm text-gray-400 mb-4 sticky top-10 bg-gray-800 z-10 pb-2 border-b border-gray-700">Generando exportaciones para: <span id="ui-date" class="font-bold text-white">Calculando...</span></p>
+
+      <div id="links-container" class="space-y-6">
+        <div class="text-center text-gray-500 py-10"><i class="fa-solid fa-spinner fa-spin text-3xl mb-3"></i><p>Calculando rutas exactas...</p></div>
+      </div>
+    </section>
+
+    <section class="bg-gray-800 rounded-xl p-6 shadow-xl border border-gray-700 flex flex-col max-h-[750px]">
+      <h2 class="text-xl font-semibold mb-2 border-b border-gray-700 pb-2"><i class="fa-solid fa-shield-halved text-red-400 mr-2"></i>2. The Guardian (Poka-yoke)</h2>
+      <p class="text-sm text-gray-400 mb-6">Valida matemáticamente la Dropzone antes de inyectar a BigQuery.</p>
+
+      <div class="flex-grow flex flex-col justify-center items-center bg-gray-900 rounded-lg border border-gray-700 p-6">
+        
+        <div id="guardian-status" class="text-center mb-6">
+          <p class="text-5xl font-bold text-gray-600" id="score-display">--/--</p>
+          <p class="text-sm text-gray-400 mt-2 uppercase tracking-widest">Archivos Validados</p>
+        </div>
+
+        <button onclick="runScan()" id="btn-scan" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-4 rounded shadow transition flex justify-center items-center">
+          <i class="fa-solid fa-radar mr-2"></i> Escanear Dropzone
+        </button>
+
+        <div id="missing-box" class="w-full mt-4 p-4 bg-red-900/30 border border-red-800 rounded-lg hidden overflow-y-auto max-h-[150px] custom-scrollbar">
+          <p class="text-red-400 font-bold text-sm mb-2"><i class="fa-solid fa-triangle-exclamation mr-1"></i> Faltan estos archivos:</p>
+          <ul id="missing-list" class="text-xs text-red-300 list-disc list-inside"></ul>
+        </div>
+
+        <button id="btn-dispatch" onclick="runPipeline()" disabled class="w-full mt-4 bg-gray-700 text-gray-500 font-bold py-3 px-4 rounded cursor-not-allowed transition flex justify-center items-center">
+          <i class="fa-solid fa-paper-plane mr-2"></i> Iniciar Pipeline ELT (Bloqueado)
+        </button>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    window.onload = function() {
+      google.script.run.withSuccessHandler(populateLinks).getDynamicLinks();
+    };
+
+    function populateLinks(data) {
+      document.getElementById('ui-date').textContent = data.dateDisplay;
+      const container = document.getElementById('links-container');
+      container.innerHTML = '';
+
+      const renderSystem = (title, linksArr, colorClass, isOptional = false) => {
+        if(isOptional && !data.isFriday && title === 'Homebase') return;
+        
+        let html = `
+          <div class="border border-gray-700 rounded-lg p-4 bg-gray-900/50">
+            <h3 class="font-bold ${colorClass} mb-3 border-b border-gray-700 pb-1">${title}</h3>
+            <ul class="space-y-2">
+        `;
+        linksArr.forEach(link => {
+          html += `
+            <li class="flex justify-between items-center text-sm bg-gray-800 p-2 rounded border border-gray-700 hover:border-gray-500 transition">
+              <span class="text-gray-300 font-medium">${link.name} ${link.note ? `<span class="text-xs text-gray-500 italic ml-1">${link.note}</span>` : ''}</span>
+              <a href="${link.url}" target="_blank" class="text-blue-400 hover:text-blue-300 px-3 py-1 rounded bg-gray-700 hover:bg-gray-600 transition text-xs font-bold">ABRIR <i class="fa-solid fa-arrow-up-right-from-square ml-1"></i></a>
+            </li>
+          `;
+        });
+        html += `</ul></div>`;
+        container.innerHTML += html;
+      };
+
+      renderSystem('Clover POS', data.links.clover, 'text-green-400');
+      renderSystem('Shopventory', data.links.shopventory, 'text-purple-400');
+      renderSystem('RewardUp', data.links.rewardup, 'text-yellow-400');
+      renderSystem('Homebase', data.links.homebase, 'text-blue-400', true);
+    }
+
+    function runScan() {
+      const btnScan = document.getElementById('btn-scan');
+      btnScan.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> Escaneando...';
+      btnScan.disabled = true;
+      btnScan.classList.replace('bg-blue-600', 'bg-gray-600');
+      
+      document.getElementById('missing-box').classList.add('hidden');
+      document.getElementById('missing-list').innerHTML = '';
+
+      google.script.run.withSuccessHandler(processScanResults).scanDropzoneGuardian();
+    }
+
+    function processScanResults(result) {
+      const btnScan = document.getElementById('btn-scan');
+      const score = document.getElementById('score-display');
+      const btnDispatch = document.getElementById('btn-dispatch');
+      
+      btnScan.innerHTML = '<i class="fa-solid fa-radar mr-2"></i> Re-escanear Dropzone';
+      btnScan.disabled = false;
+      btnScan.classList.replace('bg-gray-600', 'bg-blue-600');
+
+      score.textContent = `${result.foundCount}/${result.totalExpected}`;
+      
+      if (result.isReady) {
+        score.classList.replace('text-gray-600', 'text-green-500');
+        score.classList.replace('text-red-500', 'text-green-500');
+        
+        btnDispatch.disabled = false;
+        btnDispatch.classList.replace('bg-gray-700', 'bg-green-600');
+        btnDispatch.classList.replace('text-gray-500', 'text-white');
+        btnDispatch.classList.replace('cursor-not-allowed', 'hover:bg-green-500');
+        btnDispatch.innerHTML = '<i class="fa-solid fa-paper-plane mr-2"></i> Autorizar & Ejecutar Pipeline';
+      } else {
+        score.classList.replace('text-gray-600', 'text-red-500');
+        score.classList.replace('text-green-500', 'text-red-500');
+        
+        const missingBox = document.getElementById('missing-box');
+        const missingList = document.getElementById('missing-list');
+        result.missingFiles.forEach(file => {
+          let li = document.createElement('li');
+          li.textContent = file;
+          missingList.appendChild(li);
+        });
+        missingBox.classList.remove('hidden');
+        
+        btnDispatch.disabled = true;
+        btnDispatch.classList.add('bg-gray-700', 'text-gray-500', 'cursor-not-allowed');
+        btnDispatch.classList.remove('bg-green-600', 'text-white', 'hover:bg-green-500');
+      }
+    }
+
+    // AHORA LLAMA DIRECTAMENTE AL ORQUESTADOR MAESTRO DE LA FASE 2
+    function runPipeline() {
+      const btnDispatch = document.getElementById('btn-dispatch');
+      const scoreDisplay = document.getElementById('score-display');
+      
+      btnDispatch.disabled = true;
+      btnDispatch.innerHTML = '<i class="fa-solid fa-gear fa-spin mr-2"></i> Ejecutando Orquestador (No Cierre)...';
+      btnDispatch.classList.replace('bg-green-600', 'bg-blue-600');
+      btnDispatch.classList.remove('hover:bg-green-500');
+      
+      scoreDisplay.innerHTML = '<i class="fa-solid fa-network-wired text-blue-500 text-4xl"></i>';
+
+      google.script.run
+        .withSuccessHandler(processPipelineResults)
+        .withFailureHandler(function(error) {
+           alert("Error Crítico en el Orquestador: " + error.message);
+           processPipelineResults({success: false, error: error.message});
+        })
+        .executePipelineOrchestrator();
+    }
+
+    function processPipelineResults(response) {
+      const btnDispatch = document.getElementById('btn-dispatch');
+      const scoreDisplay = document.getElementById('score-display');
+      
+      if (response.success) {
+        scoreDisplay.innerHTML = '<i class="fa-solid fa-circle-check text-green-500 text-5xl"></i>';
+        btnDispatch.innerHTML = '<i class="fa-solid fa-check-double mr-2"></i> Pipeline ELT 100% Completado';
+        btnDispatch.classList.replace('bg-blue-600', 'bg-green-700');
+        
+        setTimeout(() => { window.location.reload(); }, 5000);
+      } else {
+        scoreDisplay.innerHTML = '<i class="fa-solid fa-triangle-exclamation text-red-500 text-5xl"></i>';
+        btnDispatch.innerHTML = '<i class="fa-solid fa-rotate-right mr-2"></i> Error en Pipeline. Avisar a TI.';
+        btnDispatch.classList.replace('bg-blue-600', 'bg-red-600');
+        btnDispatch.disabled = false;
+      }
+    }
+  </script>
+</body>
+</html>
